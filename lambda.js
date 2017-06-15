@@ -308,30 +308,27 @@ function handleControl(request, callback) {
             }
  
             marantzAPI(commands, function(success, message) {
-                if (success === true) {
-                    response = generateResponse('TurnOnConfirmation', {});
-                } else {
-                    response = generateResponse('DriverInternalError', {message: message});
-                }
+                if (success !== true) {
+                    callback(null, generateResponse('DriverInternalError', {}));
+                } 
                 
                 // and close us out.
                 log('DEBUG', `Control Confirmation: ${JSON.stringify(response)}`);
-                callback(null, response);
+                callback(null, generateResponse('TurnOnConfirmation', {}));
             });
             break;
 
         case 'TurnOffRequest':
             commands.push('PutZone_OnOff/OFF');
+            
             marantzAPI(commands, function(success, message) {
-                if (success === true) {
-                    response = generateResponse('TurnOffConfirmation', {});
-                } else {
-                    response = generateResponse('DriverInternalError', {});
-                }
+                if (success !== true) {
+                    callback(null, generateResponse('DriverInternalError', {}));
+                } 
                 
                 // and close us out.
                 log('DEBUG', `Control Confirmation: ${JSON.stringify(response)}`);
-                callback(null, response);
+                callback(null, generateResponse('TurnOffConfirmation', {}));
             });
             break;
             
@@ -346,16 +343,15 @@ function handleControl(request, callback) {
             var newVolume = (percentage/100)*60;
             
             commands.push('PutMasterVolumeSet/-' + newVolume);
+
             marantzAPI(commands, function(success, message) {
-                if (success === true) {
-                    response = generateResponse('SetPercentageConfirmation', {});
-                } else {
-                    response = generateResponse('DriverInternalError', {});
-                }
+                if (success !== true) {
+                    callback(null, generateResponse('DriverInternalError', {}));
+                } 
                 
                 // and close us out.
                 log('DEBUG', `Control Confirmation: ${JSON.stringify(response)}`);
-                callback(null, response);
+                callback(null, generateResponse('SetPercentageConfirmation', {}));
             });
             break;
         }
