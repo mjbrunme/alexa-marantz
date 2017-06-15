@@ -27,7 +27,7 @@ const USER_DEVICES = [
         // List the actions the device can support from our API
         // The action should be the name of the actions listed here
         // https://developer.amazon.com/public/solutions/alexa/alexa-skills-kit/docs/smart-home-skill-api-reference#discoverappliancesresponse
-        actions: ['turnOn', 'turnOff'],
+        actions: ['turnOn', 'turnOff', 'incrementPercentage', 'decrementPercentage', 'setPercentage'],
         // not used at this time
         //additionalApplianceDetails: {
         //    extraDetail1: 'optionalDetailForSkillAdapterToReferenceThisDevice',
@@ -41,7 +41,7 @@ const USER_DEVICES = [
         friendlyName: 'Cable',
         friendlyDescription: 'Cable Box via Marantz SR5010',
         isReachable: true,
-        actions: ['turnOn', 'turnOff'],
+        actions: ['turnOn', 'turnOff', 'incrementPercentage', 'decrementPercentage', 'setPercentage'],
     },
     {
         applianceId: 'marantz-sr5010',
