@@ -340,7 +340,10 @@ function handleControl(request, callback) {
                 return;
             }
             
-            var newVolume = (percentage/100)*60;
+            // the receiver is set in increments less than 80.  So the highest we can go is -0
+            // The lowest we can go is -80
+            
+            var newVolume = ((100-percentage)/100)*80;
             
             commands.push('PutMasterVolumeSet/-' + newVolume);
 
@@ -370,15 +373,16 @@ function handleControl(request, callback) {
                 }
                 
                 var masterVolume = Math.abs(receiver.item['MasterVolume'][0].value[0]);
+
+                // volume++ means decreasing the value of MasterVolume
+                var newVolume = Math.round(masterVolume-(delta/100)*80);
+
+                // too loud! max us out
+                if (newVolume < 0) { newVolume = 10; }
                 
-                // for our sake we consider a volume range of 0-60, I don't want to go any higher.
-                var newVolume = masterVolume + (delta/60)*100;
-                if (newVolume > 60) {
-                    newVolume = 60;
-                }
-                if (newVolume < 0) {
-                    newVolume = 0;
-                }
+                // too quiet, let's get a bit of sound here
+                if (newVolume > 80) { newVolume = 70; }
+                
                 commands.push('PutMasterVolumeSet/-' + newVolume);
                 
                 marantzAPI(commands, function(success, message) {
@@ -412,19 +416,20 @@ function handleControl(request, callback) {
                 
                 var masterVolume = Math.abs(receiver.item['MasterVolume'][0].value[0]);
                 
-                // for our sake we consider a volume range of 0-60, I don't want to go any higher.
-                var newVolume = masterVolume - (delta/60)*100;
-                if (newVolume > 60) {
-                    newVolume = 60;
-                }
-                if (newVolume < 0) {
-                    newVolume = 0;
-                }
+                // volume-- means a BIGGER value here.
+                var newVolume = Math.round(masterVolume+(delta/100)*80);
+                
+                // too loud! max us out
+                if (newVolume < 0) { newVolume = 10; }
+                
+                // too quiet, let's get a bit of sound here
+                if (newVolume > 80) { newVolume = 70; }
+                
                 commands.push('PutMasterVolumeSet/-' + newVolume);
                 
                 marantzAPI(commands, function(success, message) {
                     if (success === true) {
-                        response = generateResponse('IncrementPercentageConfirmation', {});
+                        response = generateResponse('DecrementPercentageConfirmation', {});
                     } else {
                         response = generateResponse('DriverInternalError', {});
                     }
