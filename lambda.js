@@ -2,6 +2,7 @@
 
 var http = require('http');
 var qs = require('querystring');
+var parseXmlString = require('xml2js').parseString;
 
 /**
  * We're not discovering our devices, we're just hardcoding them.  Easy!
@@ -9,18 +10,18 @@ var qs = require('querystring');
 const USER_DEVICES = [
     {
         // This id needs to be unique across all devices discovered for a given manufacturer
-        applianceId: 'marantz-sr6010-shield',
+        applianceId: 'marantz-sr5010-shield',
         // Company name that produces and sells the smart home device
         manufacturerName: 'Marantz nVidia',
         // Model name of the device
-        modelName: 'SR6010 Shield',
+        modelName: 'SR5010 Shield',
         // Version number of the product
         version: '1.0',
         // The name given by the user in your application. Examples include 'Bedroom light' etc
         friendlyName: 'Shield',
         // Should describe the device type and the company/cloud provider.
         // This value will be shown in the Alexa app
-        friendlyDescription: 'nVidia Shield via Marantz SR6010',
+        friendlyDescription: 'nVidia Shield via Marantz SR5010',
         // Boolean value to represent the status of the device at time of discovery
         isReachable: true,
         // List the actions the device can support from our API
@@ -33,29 +34,24 @@ const USER_DEVICES = [
         //},
     },
     {
-        // This id needs to be unique across all devices discovered for a given manufacturer
-        applianceId: 'marantz-sr6010-cable',
-        // Company name that produces and sells the smart home device
+        applianceId: 'marantz-sr5010-cable',
         manufacturerName: 'Marantz Cable',
-        // Model name of the device
-        modelName: 'SR6010 Cable',
-        // Version number of the product
+        modelName: 'SR5010 Cable',
         version: '1.0',
-        // The name given by the user in your application. Examples include 'Bedroom light' etc
         friendlyName: 'Cable',
-        // Should describe the device type and the company/cloud provider.
-        // This value will be shown in the Alexa app
-        friendlyDescription: 'Cable Box via Marantz SR6010',
-        // Boolean value to represent the status of the device at time of discovery
+        friendlyDescription: 'Cable Box via Marantz SR5010',
         isReachable: true,
-        // List the actions the device can support from our API
-        // The action should be the name of the actions listed here
-        // https://developer.amazon.com/public/solutions/alexa/alexa-skills-kit/docs/smart-home-skill-api-reference#discoverappliancesresponse
         actions: ['turnOn', 'turnOff'],
-        // not used at this time
-        //additionalApplianceDetails: {
-        //    extraDetail1: 'optionalDetailForSkillAdapterToReferenceThisDevice',
-        //},
+    },
+    {
+        applianceId: 'marantz-sr5010',
+        manufacturerName: 'Marantz',
+        modelName: 'SR5010',
+        version: '1.0',
+        friendlyName: 'Receiver',
+        friendlyDescription: 'Marantz SR5010 Volume',
+        isReachable: true,
+        actions: ['turnOn', 'turnOff', 'incrementPercentage', 'decrementPercentage', 'setPercentage'],
     }
 ];
 
@@ -114,22 +110,16 @@ function isValidToken() {
     return true;
 }
 
-function isDeviceOnline(applianceId) {
-    log('DEBUG', `isDeviceOnline (applianceId: ${applianceId})`);
-
-    /**
-     * Always returns true in sample code, but that works for us too because we don't care whether it's online or not.
-     */
-    return true;
-}
-
 /**
  * The meat and potatoes, I'm butchering just the things I Need from the solid work done by Nathan Totten:
  * https://github.com/ntotten/marantz-avr/blob/master/lib/avreciever.js
  */
-function marantzAPI(commands) {
-    log('DEBUG', `MarantzAPI Invoked: ` + JSON.stringify(commands));
+ 
+function marantzAPI(commands, apiCallback) {
     var postData = {};
+    
+    // always add this guy
+    commands.push('aspMainZone_WebUpdateStatus/');
     
     // format commands for the Marantz POST (cmd0: cmd1: etc)
     // note: may need to send commands one at a time??
@@ -137,11 +127,11 @@ function marantzAPI(commands) {
         postData['cmd' + i] = commands[i];
     }
     
-    log('DEBUG', `MarantzAPI POST Data: ` + qs.stringify(postData));
+    log('DEBUG', `MarantzAPI Called w Data: ` + qs.stringify(postData));
     
     var serverError = function (e) {
         log('Error', e.message);
-        return generateResponse('Server Error', e.message);
+        apiCallback(false, e.message);
     };    
     
     var apiRequest = http.request({
@@ -154,52 +144,54 @@ function marantzAPI(commands) {
             'Content-Length': Buffer.byteLength(qs.stringify(postData))
         },
     }, function(response) {
-        var dataStream;
         
         response.setEncoding('utf8');
-
         response.on('data', function (chunk) {
-            dataStream += chunk;
-            log('DEBUG', `CHUNK: ` + chunk);
+            //log('DEBUG', 'CHUNK RECEIVED');
         });
-
+        
         response.on('end', function () {
-            log('DEBUG', `API Request Complete: ` + dataStream);
-            return generateResponse('APIRequestComplete', postData);
+            log('DEBUG', `API Request Complete`);
+            apiCallback(true, '');
         });        
 
-        response.on('error', serverError);
-    });  
-    
+        response.on('error', serverError); 
+    });
+
     apiRequest.on('error', serverError);
     apiRequest.write(qs.stringify(postData));
     apiRequest.end();    
-}
+} 
 
-
-/* Figure out whether I can use these for volume */
-function setPercentage(applianceId, percentage) {
-    log('DEBUG', `setPercentage (applianceId: ${applianceId}), percentage: ${percentage}`);
-
-    // Call device cloud's API to set percentage
-
-    return generateResponse('SetPercentageConfirmation', {});
-}
-
-function incrementPercentage(applianceId, delta) {
-    log('DEBUG', `incrementPercentage (applianceId: ${applianceId}), delta: ${delta}`);
-
-    // Call device cloud's API to set percentage delta
-
-    return generateResponse('IncrementPercentageConfirmation', {});
-}
-
-function decrementPercentage(applianceId, delta) {
-    log('DEBUG', `decrementPercentage (applianceId: ${applianceId}), delta: ${delta}`);
-
-    // Call device cloud's API to set percentage delta
-
-    return generateResponse('DecrementPercentageConfirmation', {});
+function getReceiverState(statusCallback) {
+    
+    // get the receiver state
+    http.get({
+        hostname: process.env.receiverIp,
+        path: '/goform/formMainZone_MainZoneXml.xml',
+        port: process.env.receiverPort,
+    }, function(statusResponse) {
+        var xmlDoc;
+        
+        statusResponse.on('data', function(chunk){
+            xmlDoc += chunk;
+        });        
+        
+        statusResponse.on('end', function() {
+            // we gotta trim the xmlDoc up a bit
+            xmlDoc = xmlDoc.replace('undefined', '').trim();
+            
+            // parse our XML Document into json pls
+            parseXmlString(xmlDoc, function(err, receiver) {
+                if (err) {
+                   statusCallback(false, generateResponse('DriverInternalError', {})); 
+                }
+                
+                statusCallback(true, receiver);
+            });
+        });
+    });
+                    
 }
 
 
@@ -277,27 +269,7 @@ function handleDiscovery(request, callback) {
 function handleControl(request, callback) {
     log('DEBUG', `Control Request: ${JSON.stringify(request)}`);
 
-    /**
-     * Get the access token.
-     */
     const userAccessToken = request.payload.accessToken.trim();
-
-    /**
-     * Generic stub for validating the token against your cloud service.
-     * Replace isValidToken() function with your own validation.
-     *
-     * If the token is invliad, return InvalidAccessTokenError
-     *  https://developer.amazon.com/public/solutions/alexa/alexa-skills-kit/docs/smart-home-skill-api-reference#invalidaccesstokenerror
-     */
-    if (!userAccessToken || !isValidToken(userAccessToken)) {
-        log('ERROR', `Discovery Request [${request.header.messageId}] failed. Invalid access token: ${userAccessToken}`);
-        callback(null, generateResponse('InvalidAccessTokenError', {}));
-        return;
-    }
-
-    /**
-     * Grab the applianceId from the request.
-     */
     const applianceId = request.payload.appliance.applianceId;
 
     /**
@@ -311,51 +283,58 @@ function handleControl(request, callback) {
         return;
     }
 
-    /**
-     * At this point the applianceId and accessToken are present in the request.
-     *
-     * Please review the full list of errors in the link below for different states that can be reported.
-     * If these apply to your device/cloud infrastructure, please add the checks and respond with
-     * accurate error messages. This will give the user the best experience and help diagnose issues with
-     * their devices, accounts, and environment
-     *  https://developer.amazon.com/public/solutions/alexa/alexa-skills-kit/docs/smart-home-skill-api-reference#error-messages
-     */
-    if (!isDeviceOnline(applianceId, userAccessToken)) {
-        log('ERROR', `Device offline: ${applianceId}`);
-        callback(null, generateResponse('TargetOfflineError', {}));
-        return;
-    }
-
     let response;
     var commands = [];
     
     switch (request.header.name) {
         case 'TurnOnRequest':
             // turn on the device
-            commands.push('PutZone_OnOff/ON');
+            // commands.push('PutZone_OnOff/ON');
             
             // set the input
             switch (applianceId) {
-                case 'marantz-sr6010-shield':
+                case 'marantz-sr5010-shield':
                     commands.push('PutZone_InputFunction/MPLAY');
                     break;
                     
-                case 'marantz-sr6010-cable':
+                case 'marantz-sr5010-cable':
                     commands.push('PutZone_InputFunction/SAT/CBL');
                     break;
+                  
+                case 'marantz-sr5010':
+                    // no additional commands needed
+                    break;
+                                    
             }
-            
-            // I guess?  Not even sure if it actually does all this.
-            commands.push('aspMainZone_WebUpdateStatus/');
-            response = marantzAPI(commands);
+ 
+            marantzAPI(commands, function(success, message) {
+                if (success === true) {
+                    response = generateResponse('TurnOnConfirmation', {});
+                } else {
+                    response = generateResponse('DriverInternalError', {message: message});
+                }
+                
+                // and close us out.
+                log('DEBUG', `Control Confirmation: ${JSON.stringify(response)}`);
+                callback(null, response);
+            });
             break;
 
         case 'TurnOffRequest':
             commands.push('PutZone_OnOff/OFF');
-            response = marantzAPI(commands);
+            marantzAPI(commands, function(success, message) {
+                if (success === true) {
+                    response = generateResponse('TurnOffConfirmation', {});
+                } else {
+                    response = generateResponse('DriverInternalError', {});
+                }
+                
+                // and close us out.
+                log('DEBUG', `Control Confirmation: ${JSON.stringify(response)}`);
+                callback(null, response);
+            });
             break;
-        
-        
+            
         case 'SetPercentageRequest': {
             const percentage = request.payload.percentageState.value;
             if (!percentage) {
@@ -363,7 +342,21 @@ function handleControl(request, callback) {
                 callback(null, generateResponse('UnexpectedInformationReceivedError', payload));
                 return;
             }
-            response = setPercentage(applianceId, userAccessToken, percentage);
+            
+            var newVolume = (percentage/100)*60;
+            
+            commands.push('PutMasterVolumeSet/-' + newVolume);
+            marantzAPI(commands, function(success, message) {
+                if (success === true) {
+                    response = generateResponse('SetPercentageConfirmation', {});
+                } else {
+                    response = generateResponse('DriverInternalError', {});
+                }
+                
+                // and close us out.
+                log('DEBUG', `Control Confirmation: ${JSON.stringify(response)}`);
+                callback(null, response);
+            });
             break;
         }
 
@@ -374,7 +367,37 @@ function handleControl(request, callback) {
                 callback(null, generateResponse('UnexpectedInformationReceivedError', payload));
                 return;
             }
-            response = incrementPercentage(applianceId, userAccessToken, delta);
+            
+            getReceiverState(function(success, receiver) {
+                if (success === false) {
+                    callback(null, generateResponse('DriverInternalError', {}));
+                }
+                
+                var masterVolume = Math.abs(receiver.item['MasterVolume'][0].value[0]);
+                
+                // for our sake we consider a volume range of 0-60, I don't want to go any higher.
+                var newVolume = masterVolume + (delta/60)*100;
+                if (newVolume > 60) {
+                    newVolume = 60;
+                }
+                if (newVolume < 0) {
+                    newVolume = 0;
+                }
+                commands.push('PutMasterVolumeSet/-' + newVolume);
+                
+                marantzAPI(commands, function(success, message) {
+                    if (success === true) {
+                        response = generateResponse('IncrementPercentageConfirmation', {});
+                    } else {
+                        response = generateResponse('DriverInternalError', {});
+                    }
+                    
+                    // and close us out.
+                    log('DEBUG', `Control Confirmation: ${JSON.stringify(response)}`);
+                    callback(null, response);
+                });
+            }); 
+
             break;
         }
 
@@ -385,7 +408,37 @@ function handleControl(request, callback) {
                 callback(null, generateResponse('UnexpectedInformationReceivedError', payload));
                 return;
             }
-            response = decrementPercentage(applianceId, userAccessToken, delta);
+
+            getReceiverState(function(success, receiver) {
+                if (success === false) {
+                    callback(null, generateResponse('DriverInternalError', {}));
+                }
+                
+                var masterVolume = Math.abs(receiver.item['MasterVolume'][0].value[0]);
+                
+                // for our sake we consider a volume range of 0-60, I don't want to go any higher.
+                var newVolume = masterVolume - (delta/60)*100;
+                if (newVolume > 60) {
+                    newVolume = 60;
+                }
+                if (newVolume < 0) {
+                    newVolume = 0;
+                }
+                commands.push('PutMasterVolumeSet/-' + newVolume);
+                
+                marantzAPI(commands, function(success, message) {
+                    if (success === true) {
+                        response = generateResponse('IncrementPercentageConfirmation', {});
+                    } else {
+                        response = generateResponse('DriverInternalError', {});
+                    }
+                    
+                    // and close us out.
+                    log('DEBUG', `Control Confirmation: ${JSON.stringify(response)}`);
+                    callback(null, response);
+                });
+            }); 
+
             break;
         }
         
@@ -396,10 +449,11 @@ function handleControl(request, callback) {
             return;
         }
     }
-
-    log('DEBUG', `Control Confirmation: ${JSON.stringify(response)}`);
-
-    callback(null, response);
+    
+    log('DEBUG', 'EOF handleControl');
+    // I think I need to remove these, because response is not set at execution time
+    // log('DEBUG', `Control Confirmation: ${JSON.stringify(response)}`);
+    // callback(null, response);
 }
 
 /**
