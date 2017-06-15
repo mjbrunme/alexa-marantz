@@ -289,7 +289,7 @@ function handleControl(request, callback) {
     switch (request.header.name) {
         case 'TurnOnRequest':
             // turn on the device
-            // commands.push('PutZone_OnOff/ON');
+            commands.push('PutZone_OnOff/ON');
             
             // set the input
             switch (applianceId) {
