@@ -44,15 +44,45 @@ const USER_DEVICES = [
         actions: ['turnOn', 'turnOff', 'incrementPercentage', 'decrementPercentage', 'setPercentage'],
     },
     {
+        applianceId: 'marantz-sr5010-bluetooth',
+        manufacturerName: 'Marantz Bluetooth',
+        modelName: 'SR5010 Bluetooth',
+        version: '1.0',
+        friendlyName: 'Bluetooth',
+        friendlyDescription: 'Bluetooth via Marantz SR5010',
+        isReachable: true,
+        actions: ['turnOn', 'turnOff', 'incrementPercentage', 'decrementPercentage', 'setPercentage'],
+    },    
+    {
         applianceId: 'marantz-sr5010',
         manufacturerName: 'Marantz',
         modelName: 'SR5010',
         version: '1.0',
         friendlyName: 'Receiver',
-        friendlyDescription: 'Marantz SR5010 Volume',
+        friendlyDescription: 'Marantz SR5010 Device',
         isReachable: true,
         actions: ['turnOn', 'turnOff', 'incrementPercentage', 'decrementPercentage', 'setPercentage'],
-    }
+    },
+    {
+        applianceId: 'marantz-sr5010-volume',
+        manufacturerName: 'Marantz Volume',
+        modelName: 'SR5010 Volume',
+        version: '1.0',
+        friendlyName: 'Volume',
+        friendlyDescription: 'Marantz SR5010 Volume',
+        isReachable: true,
+        actions: ['incrementPercentage', 'decrementPercentage', 'setPercentage'],
+    },
+    {
+        applianceId: 'sony-x850c',
+        manufacturerName: 'Sony',
+        modelName: 'XBR55X850C',
+        version: '1.0',
+        friendlyName: 'TV',
+        friendlyDescription: 'Sony XBRX850C TV',
+        isReachable: true,
+        actions: ['turnOn', 'turnOff', 'incrementPercentage', 'decrementPercentage', 'setPercentage'],
+    },
 ];
 
 /**
@@ -162,6 +192,56 @@ function marantzAPI(commands, apiCallback) {
     apiRequest.write(qs.stringify(postData));
     apiRequest.end();    
 } 
+
+function sonyPower(apiCallback) {
+    /* TODO:
+        add an intent to this and check whether the TV is on or not.  That way we can 
+        always call sonyPower('on', func...) to turn it on and sonyPower('off', func..) to turn it off.
+        The current implementation just "flips" the power state of the TV regardless of what it is.
+    */
+    var serverError = function (e) {
+        log('Error', e.message);
+        apiCallback(false, e.message);
+    };      
+    
+    var postData = `<?xml version="1.0"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+<s:Body>
+<u:X_SendIRCC xmlns:u="urn:schemas-sony-com:service:IRCC:1">
+<IRCCCode>AAAAAQAAAAEAAAAVAw==</IRCCCode>
+</u:X_SendIRCC>
+</s:Body>
+</s:Envelope>`;
+    
+    var apiRequest = http.request({
+        hostname: process.env.tvIp,
+        path: '/sony/ircc',
+        port: process.env.tvPort,
+        method: 'POST',
+        headers: {
+            'X-Auth-PSK': process.env.tvPSK,
+            'Content-Type': 'text/xml; charset=utf-8',
+            'soapaction': '"urn:schemas-sony-com:service:IRCC:1#X_SendIRCC"'
+        },
+    }, function(response) {
+
+        response.setEncoding('utf8');
+        response.on('data', function (chunk) {
+            // do nothing
+        });
+        
+        response.on('end', function () {
+            log('DEBUG', `Sony API Request Complete`);
+            apiCallback(true, '');
+        });        
+
+        response.on('error', serverError); 
+    });    
+    
+    apiRequest.on('error', serverError);
+    apiRequest.write(postData);
+    apiRequest.end();       
+}
 
 function getReceiverState(statusCallback) {
     
@@ -283,11 +363,10 @@ function handleControl(request, callback) {
         return;
     }
 
-    let response;
     var commands = [];
     
     switch (request.header.name) {
-        case 'TurnOnRequest':
+        case 'TurnOnRequest': {
             // turn on the device
             commands.push('PutZone_OnOff/ON');
             
@@ -299,6 +378,10 @@ function handleControl(request, callback) {
                     
                 case 'marantz-sr5010-cable':
                     commands.push('PutZone_InputFunction/SAT/CBL');
+                    break;
+                    
+                case 'marantz-sr5010-bluetooth':
+                    commands.push('PutZone_InputFunction/BT');
                     break;
                   
                 case 'marantz-sr5010':
@@ -313,25 +396,24 @@ function handleControl(request, callback) {
                 } 
                 
                 // and close us out.
-                log('DEBUG', `Control Confirmation: ${JSON.stringify(response)}`);
                 callback(null, generateResponse('TurnOnConfirmation', {}));
             });
             break;
+        }
 
-        case 'TurnOffRequest':
-            commands.push('PutZone_OnOff/OFF');
-            
-            marantzAPI(commands, function(success, message) {
+        case 'TurnOffRequest': {
+            // call the TV api to turn off via the TV.
+            sonyPower(function(success, message) {
                 if (success !== true) {
                     callback(null, generateResponse('DriverInternalError', {}));
                 } 
                 
                 // and close us out.
-                log('DEBUG', `Control Confirmation: ${JSON.stringify(response)}`);
                 callback(null, generateResponse('TurnOffConfirmation', {}));
             });
             break;
-            
+        }
+        
         case 'SetPercentageRequest': {
             const percentage = request.payload.percentageState.value;
             if (!percentage) {
@@ -353,7 +435,6 @@ function handleControl(request, callback) {
                 } 
                 
                 // and close us out.
-                log('DEBUG', `Control Confirmation: ${JSON.stringify(response)}`);
                 callback(null, generateResponse('SetPercentageConfirmation', {}));
             });
             break;
@@ -386,15 +467,12 @@ function handleControl(request, callback) {
                 commands.push('PutMasterVolumeSet/-' + newVolume);
                 
                 marantzAPI(commands, function(success, message) {
-                    if (success === true) {
-                        response = generateResponse('IncrementPercentageConfirmation', {});
-                    } else {
-                        response = generateResponse('DriverInternalError', {});
+                    if (success !== true) {
+                        callback(null, generateResponse('DriverInternalError', {}));
                     }
                     
                     // and close us out.
-                    log('DEBUG', `Control Confirmation: ${JSON.stringify(response)}`);
-                    callback(null, response);
+                    callback(null, generateResponse('IncrementPercentageConfirmation', {}));
                 });
             }); 
 
@@ -428,15 +506,12 @@ function handleControl(request, callback) {
                 commands.push('PutMasterVolumeSet/-' + newVolume);
                 
                 marantzAPI(commands, function(success, message) {
-                    if (success === true) {
-                        response = generateResponse('DecrementPercentageConfirmation', {});
-                    } else {
-                        response = generateResponse('DriverInternalError', {});
+                    if (success !== true) {
+                        callback(null, generateResponse('DriverInternalError', {}));
                     }
                     
                     // and close us out.
-                    log('DEBUG', `Control Confirmation: ${JSON.stringify(response)}`);
-                    callback(null, response);
+                    callback(null, generateResponse('DecrementPercentageConfirmation', {}));
                 });
             }); 
 
@@ -449,6 +524,7 @@ function handleControl(request, callback) {
             callback(null, generateResponse('UnsupportedOperationError', {}));
             return;
         }
+        
     }
     
     log('DEBUG', 'EOF handleControl');
