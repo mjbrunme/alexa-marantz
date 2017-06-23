@@ -193,7 +193,7 @@ function marantzAPI(commands, apiCallback) {
     apiRequest.end();    
 } 
 
-function sonyPower(apiCallback) {
+function sonyPower(irCode, apiCallback) {
     /* TODO:
         add an intent to this and check whether the TV is on or not.  That way we can 
         always call sonyPower('on', func...) to turn it on and sonyPower('off', func..) to turn it off.
@@ -208,7 +208,7 @@ function sonyPower(apiCallback) {
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
 <s:Body>
 <u:X_SendIRCC xmlns:u="urn:schemas-sony-com:service:IRCC:1">
-<IRCCCode>AAAAAQAAAAEAAAAVAw==</IRCCCode>
+<IRCCCode>${irCode}</IRCCCode>
 </u:X_SendIRCC>
 </s:Body>
 </s:Envelope>`;
@@ -383,27 +383,52 @@ function handleControl(request, callback) {
                 case 'marantz-sr5010-bluetooth':
                     commands.push('PutZone_InputFunction/BT');
                     break;
-                  
+                
+                case 'marantz-sr5010-volume':
                 case 'marantz-sr5010':
                     // no additional commands needed
                     break;
                                     
             }
- 
+            
+            // just turn on the TV
+            if (applianceId == 'sony-x850c') {
+                sonyPower('AAAAAQAAAAEAAAAuAw==', function(success, message) {
+                    if (success !== true) {
+                        callback(null, generateResponse('DriverInternalError', {}));
+                    } 
+                    
+                   // and close us out.
+                    callback(null, generateResponse('TurnOnConfirmation', {}));
+                });      
+                
+                // don't do any Marantz stuff
+                break;
+            } 
+            
             marantzAPI(commands, function(success, message) {
                 if (success !== true) {
                     callback(null, generateResponse('DriverInternalError', {}));
                 } 
                 
-                // and close us out.
-                callback(null, generateResponse('TurnOnConfirmation', {}));
+                // turn on the TV, just in case
+                sonyPower('AAAAAQAAAAEAAAAuAw==', function(success, message) {
+                    if (success !== true) {
+                        callback(null, generateResponse('DriverInternalError', {}));
+                    } 
+                    
+                   // and close us out.
+                    callback(null, generateResponse('TurnOnConfirmation', {}));
+                });                 
             });
+            
             break;
+            
         }
 
         case 'TurnOffRequest': {
             // call the TV api to turn off via the TV.
-            sonyPower(function(success, message) {
+            sonyPower('AAAAAQAAAAEAAAAvAw==', function(success, message) {
                 if (success !== true) {
                     callback(null, generateResponse('DriverInternalError', {}));
                 } 
